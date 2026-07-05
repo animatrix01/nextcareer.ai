@@ -45,7 +45,7 @@ function requireGroqApiKey(): string {
 }
 
 function defaultModel(): string {
-  return process.env.GROQ_MODEL?.trim() || "llama-3.3-70b-versatile";
+  return process.env.GROQ_MODEL?.trim() || "llama-3.1-8b-instant";
 }
 
 type GroqChatCompletionResponse = {
