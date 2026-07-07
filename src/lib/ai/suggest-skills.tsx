@@ -1,4 +1,6 @@
 import { callGroqChatCompletion } from "@/lib/llm/client";
+import { parseModelJson } from "@/lib/llm/json-utils";
+import { SKILLS_JSON_SCHEMA } from "@/lib/llm/json-schemas";
 import {
   buildSuggestSkillsSystemPrompt,
   buildSuggestSkillsUserPrompt,
@@ -19,28 +21,6 @@ export class SkillSuggestionError extends Error {
   ) {
     super(message);
     this.name = "SkillSuggestionError";
-  }
-}
-
-function stripJsonFences(text: string): string {
-  const trimmed = text.trim();
-  const fence = /^```(?:json)?\s*([\s\S]*?)```$/im.exec(trimmed);
-  if (fence?.[1]) return fence[1].trim();
-  return trimmed;
-}
-
-function safeJsonParse(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    try {
-      return JSON.parse(stripJsonFences(text));
-    } catch {
-      throw new SkillSuggestionError(
-        "Model output was not valid JSON",
-        "PARSE"
-      );
-    }
   }
 }
 
@@ -65,7 +45,8 @@ export async function suggestSkills(
         { role: "system", content: system },
         { role: "user", content: user },
       ],
-      jsonMode: true,
+      // Structured outputs: Groq enforces the JSON shape server-side
+      jsonSchema: { name: "suggested_skills", schema: SKILLS_JSON_SCHEMA },
       temperature: 0.4,
     });
   } catch (e) {
@@ -75,7 +56,12 @@ export async function suggestSkills(
     throw new SkillSuggestionError("Groq request failed", "LLM");
   }
 
-  const parsed = safeJsonParse(raw);
+  let parsed: unknown;
+  try {
+    parsed = parseModelJson(raw);
+  } catch {
+    throw new SkillSuggestionError("Model output was not valid JSON", "PARSE");
+  }
   const validated = suggestSkillsResponseSchema.safeParse(parsed);
   if (!validated.success) {
     const detail = validated.error.issues
