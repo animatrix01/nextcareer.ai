@@ -101,6 +101,8 @@ export const resumeAnalysisResultSchema = z.object({
   score: z.number().int().min(0).max(100),
   issues: z.array(resumeIssueSchema).min(0),
   categorySummary: z.record(issueCategorySchema, z.number().int().min(0)),
+  /** True when the AI contextual pass failed — rule-based results only */
+  aiAnalysisFailed: z.boolean().optional(),
   analysisTimestamp: z.string().optional(),
 });
 export type ResumeAnalysisResult = z.infer<typeof resumeAnalysisResultSchema>;
