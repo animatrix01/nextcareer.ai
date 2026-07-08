@@ -1,4 +1,6 @@
 import { callGroqChatCompletion } from "@/lib/llm/client";
+import { parseModelJson } from "@/lib/llm/json-utils";
+import { ROADMAP_JSON_SCHEMA } from "@/lib/llm/json-schemas";
 import {
   buildRoadmapSystemPrompt,
   buildRoadmapUserPrompt,
@@ -19,28 +21,6 @@ export class RoadmapGenerationError extends Error {
   ) {
     super(message);
     this.name = "RoadmapGenerationError";
-  }
-}
-
-function stripJsonFences(text: string): string {
-  const trimmed = text.trim();
-  const fence = /^```(?:json)?\s*([\s\S]*?)```$/im.exec(trimmed);
-  if (fence?.[1]) return fence[1].trim();
-  return trimmed;
-}
-
-function safeJsonParse(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    try {
-      return JSON.parse(stripJsonFences(text));
-    } catch {
-      throw new RoadmapGenerationError(
-        "Model output was not valid JSON",
-        "PARSE"
-      );
-    }
   }
 }
 
@@ -65,7 +45,9 @@ export async function generateRoadmap(
         { role: "system", content: system },
         { role: "user", content: user },
       ],
-      jsonMode: true,
+      // Structured outputs: Groq enforces the JSON shape server-side,
+      // eliminating flaky "Model output was not valid JSON" failures.
+      jsonSchema: { name: "roadmap", schema: ROADMAP_JSON_SCHEMA },
       temperature: 0.35,
     });
   } catch (e) {
@@ -75,7 +57,12 @@ export async function generateRoadmap(
     throw new RoadmapGenerationError("Groq request failed", "LLM");
   }
 
-  const parsed = safeJsonParse(raw);
+  let parsed: unknown;
+  try {
+    parsed = parseModelJson(raw);
+  } catch {
+    throw new RoadmapGenerationError("Model output was not valid JSON", "PARSE");
+  }
   const validated = roadmapGenerationResultSchema.safeParse(parsed);
   if (!validated.success) {
     const detail = validated.error.issues
