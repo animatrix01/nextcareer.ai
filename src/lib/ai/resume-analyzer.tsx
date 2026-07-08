@@ -1,4 +1,6 @@
 import { callGroqChatCompletion } from "@/lib/llm/client";
+import { parseModelJson } from "@/lib/llm/json-utils";
+import { ANALYZER_JSON_SCHEMA } from "@/lib/llm/json-schemas";
 import {
   buildAnalyzerSystemPrompt,
   buildAnalyzerUserPrompt,
@@ -21,28 +23,6 @@ export class ResumeAnalyzerError extends Error {
   ) {
     super(message);
     this.name = "ResumeAnalyzerError";
-  }
-}
-
-function stripJsonFences(text: string): string {
-  const trimmed = text.trim();
-  const fence = /^```(?:json)?\s*([\s\S]*?)```$/im.exec(trimmed);
-  if (fence?.[1]) return fence[1].trim();
-  return trimmed;
-}
-
-function safeJsonParse(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    try {
-      return JSON.parse(stripJsonFences(text));
-    } catch {
-      throw new ResumeAnalyzerError(
-        "Model output was not valid JSON",
-        "PARSE"
-      );
-    }
   }
 }
 
@@ -196,7 +176,8 @@ async function runAIAnalysis(
         { role: "system", content: system },
         { role: "user", content: user },
       ],
-      jsonMode: true,
+      // Structured outputs: Groq enforces the JSON shape server-side
+      jsonSchema: { name: "analyzer", schema: ANALYZER_JSON_SCHEMA },
       temperature: 0.3,
     });
   } catch (e) {
@@ -206,7 +187,15 @@ async function runAIAnalysis(
     throw new ResumeAnalyzerError("Groq request failed", "LLM");
   }
 
-  const parsed = safeJsonParse(raw);
+  let parsed: unknown;
+  try {
+    parsed = parseModelJson(raw);
+  } catch {
+    throw new ResumeAnalyzerError(
+      "Model output was not valid JSON",
+      "PARSE"
+    );
+  }
   const validated = aiContentAnalysisSchema.safeParse(parsed);
   
   if (!validated.success) {
@@ -281,6 +270,8 @@ export type AnalyzeResumeInput = {
 /**
  * Main entry point: runs hybrid analysis (rule-based + AI).
  * Returns structured result with score, issues, and category summary.
+ * If the AI call fails, rules-only results are returned and
+ * `aiAnalysisFailed` is set so the UI can tell the user.
  */
 export async function analyzeResume(
   input: AnalyzeResumeInput
@@ -290,10 +281,12 @@ export async function analyzeResume(
 
   // Step 2: Run AI-powered contextual analysis (premium feedback)
   let aiIssues: ResumeIssue[] = [];
+  let aiAnalysisFailed = false;
   try {
     aiIssues = await runAIAnalysis(input.resumeText, input.targetRole);
   } catch (e) {
-    // If AI fails, still return rule-based results
+    // If AI fails, still return rule-based results — but flag it
+    aiAnalysisFailed = true;
     console.error("AI analysis failed:", e);
   }
 
@@ -308,6 +301,7 @@ export async function analyzeResume(
     score,
     issues: allIssues,
     categorySummary,
+    aiAnalysisFailed,
     analysisTimestamp: new Date().toISOString(),
   };
 }
