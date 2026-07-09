@@ -24,6 +24,7 @@ export function buildAnalyzerSystemPrompt(): string {
     "- problematicText: exact text from resume that needs improvement",
     "- suggestedImprovement: specific rewrite example (not generic advice)",
     "- canAIFix: true only if you provided a concrete suggestedImprovement",
+    "- LIMIT: report AT MOST 6 issues — pick only the most impactful ones. Shorter output = faster response.",
     "",
     "Issue categories:",
     '- "wording": weak verbs, vague language, passive voice',
