@@ -139,8 +139,10 @@ export async function saveResumeData(resumeId: string, data: ResumeData) {
       console.warn("Resume not found in database, data saved to local state only");
     }
   } catch (error) {
-    logError("Database update failed, continuing", error, { resumeId, userId });
-    // Continue anyway - changes will persist in local state
+    logError("Database update failed", error, { resumeId, userId });
+    // Surface the failure to the caller instead of pretending it succeeded —
+    // silent success previously hid data loss behind { success: true }.
+    return { success: false, error: "Could not save resume to database. Changes are kept locally." };
   }
 
   return { success: true };
