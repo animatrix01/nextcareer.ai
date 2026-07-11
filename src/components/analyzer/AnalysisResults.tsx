@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  AlertCircle, CheckCircle2, XCircle, Info,
+  AlertCircle, AlertTriangle, CheckCircle2, XCircle, Info,
   Target, FileText, Zap, Award, ArrowRight, Download,
   RefreshCw, Sparkles, Shield, Clock, CheckCheck, Loader2
 } from "lucide-react";
@@ -21,10 +21,16 @@ export function AnalysisResults() {
   const setAnalysisResult = useAnalyzerStore((state) => state.setAnalysisResult);
   const score = useAnalyzerStore((state) => state.score);
   const issues = useAnalyzerStore((state) => state.issues);
+  const aiAnalysisFailed = useAnalyzerStore((state) => state.aiAnalysisFailed);
 
   useEffect(() => {
     const analyzeResume = async () => {
       if (!resumeText) return;
+      // Minimum spinner display so the animation doesn't flash on fast responses,
+      // but never ADDED on top of the API time (previously a fixed +2s was
+      // appended to every analysis, inflating perceived latency).
+      const MIN_SPINNER_MS = 1500;
+      const startedAt = Date.now();
       try {
         const response = await fetch("/api/ai/analyzer", {
           method: "POST",
@@ -38,10 +44,11 @@ export function AnalysisResults() {
       } catch (error) {
         console.error("Analysis failed:", error);
       } finally {
+        const elapsed = Date.now() - startedAt;
         setTimeout(() => {
           setIsAnalyzing(false);
           setTimeout(() => setShowCards(true), 300);
-        }, 2000);
+        }, Math.max(0, MIN_SPINNER_MS - elapsed));
       }
     };
     analyzeResume();
@@ -179,6 +186,24 @@ export function AnalysisResults() {
           <h1 className="text-4xl sm:text-5xl font-serif font-bold text-ink mb-3">Your Resume Score</h1>
           <p className="text-muted-foreground text-lg">{fileName || "Your resume"} has been analyzed by our AI</p>
         </motion.div>
+
+        {/* AI unavailable notice — results are rules-only when the AI pass fails */}
+        {aiAnalysisFailed && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-left"
+          >
+            <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500" />
+            <div>
+              <p className="text-sm font-semibold text-ink">AI feedback is temporarily unavailable</p>
+              <p className="text-sm text-muted-foreground">
+                Your score below is based on rule-based ATS checks only. Wording and impact
+                suggestions from our AI couldn't be generated right now — try re-analyzing in a moment.
+              </p>
+            </div>
+          </motion.div>
+        )}
 
         {/* Score Card */}
         <motion.div
