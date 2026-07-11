@@ -14,6 +14,8 @@ type AnalyzerStore = {
   feedback: string[]; // Deprecated: kept for backward compatibility
   issues: ResumeIssue[];
   categorySummary: Record<IssueCategory, number> | null;
+  /** True when the AI contextual pass failed — results are rules-only */
+  aiAnalysisFailed: boolean;
   resumeText: string | null;
   setFileName: (fileName: string | null) => void;
   setIsScanning: (isScanning: boolean) => void;
@@ -31,6 +33,7 @@ export const useAnalyzerStore = create<AnalyzerStore>((set) => ({
   feedback: [], // Deprecated
   issues: [],
   categorySummary: null,
+  aiAnalysisFailed: false,
   resumeText: null,
   setFileName: (fileName) => set({ fileName }),
   setIsScanning: (isScanning) => set({ isScanning }),
@@ -41,6 +44,7 @@ export const useAnalyzerStore = create<AnalyzerStore>((set) => ({
       score: result.score,
       issues: result.issues,
       categorySummary: result.categorySummary,
+      aiAnalysisFailed: result.aiAnalysisFailed ?? false,
     }),
   setResumeText: (text) => set({ resumeText: text }),
   resetAnalyzer: () =>
@@ -51,6 +55,7 @@ export const useAnalyzerStore = create<AnalyzerStore>((set) => ({
       feedback: [],
       issues: [],
       categorySummary: null,
+      aiAnalysisFailed: false,
       resumeText: null,
     }),
 }));
