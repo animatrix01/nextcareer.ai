@@ -93,14 +93,6 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-
-  webpack: (config, { isServer }) => {
-    if (isServer) {
-      // Tell webpack to handle .mjs files properly for pdfjs-dist
-      config.experiments = { ...config.experiments, asyncWebAssembly: true };
-    }
-    return config;
-  },
 };
 
 export default nextConfig;
