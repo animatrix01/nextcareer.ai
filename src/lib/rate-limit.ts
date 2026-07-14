@@ -10,6 +10,13 @@
  *  - parse-resume:   10 requests / hour
  *  - enhance-summary:20 requests / hour
  *  - suggest-skills: 20 requests / hour
+ *
+ * Resilience:
+ *  - The Redis client and limiters are created lazily, so a missing/misconfigured
+ *    env var never crashes module import (previously `Redis.fromEnv()` could throw
+ *    at import time and take down every API route).
+ *  - If Redis is unreachable (e.g. deleted database, DNS failure), we "fail open"
+ *    but cache the outage for 60s so we don't retry a dead host on every request.
  */
 
 import { Ratelimit } from "@upstash/ratelimit";
@@ -17,48 +24,66 @@ import { Redis } from "@upstash/redis";
 import { NextResponse } from "next/server";
 import { logError } from "@/lib/logger";
 
-// ── Redis client (reads UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN) ──
-const redis = Redis.fromEnv();
+// ── Lazy Redis client ────────────────────────────────────────────────────────
+let cachedRedis: Redis | null | undefined;
 
-// ── Per-endpoint limiters ─────────────────────────────────────────────────────
-export const rateLimiters = {
-  roadmap: new Ratelimit({
-    redis,
-    limiter: Ratelimit.slidingWindow(5, "1 h"),
-    prefix: "rl:roadmap",
-    analytics: false,
-  }),
+function getRedis(): Redis | null {
+  if (cachedRedis !== undefined) return cachedRedis;
 
-  analyzer: new Ratelimit({
-    redis,
-    limiter: Ratelimit.slidingWindow(10, "1 h"),
-    prefix: "rl:analyzer",
-    analytics: false,
-  }),
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
 
-  parseResume: new Ratelimit({
-    redis,
-    limiter: Ratelimit.slidingWindow(10, "1 h"),
-    prefix: "rl:parse-resume",
-    analytics: false,
-  }),
+  if (!url || !token) {
+    console.warn("[rate-limit] UPSTASH_REDIS_REST_URL/TOKEN not set — rate limiting disabled (fail open)");
+    cachedRedis = null;
+    return cachedRedis;
+  }
 
-  enhanceSummary: new Ratelimit({
-    redis,
-    limiter: Ratelimit.slidingWindow(20, "1 h"),
-    prefix: "rl:enhance-summary",
-    analytics: false,
-  }),
+  try {
+    cachedRedis = new Redis({ url, token });
+  } catch (err) {
+    logError("[rate-limit] Failed to create Redis client — rate limiting disabled", err);
+    cachedRedis = null;
+  }
+  return cachedRedis;
+}
 
-  suggestSkills: new Ratelimit({
-    redis,
-    limiter: Ratelimit.slidingWindow(20, "1 h"),
-    prefix: "rl:suggest-skills",
-    analytics: false,
-  }),
-} as const;
+// ── Outage cooldown — skip dead-host retries for 60s after a failure ─────────
+let redisDownUntil = 0;
+const REDIS_RETRY_AFTER_MS = 60_000;
 
-export type RateLimiterKey = keyof typeof rateLimiters;
+// ── Lazy per-endpoint limiters ───────────────────────────────────────────────
+type LimiterKey = "roadmap" | "analyzer" | "parseResume" | "enhanceSummary" | "suggestSkills";
+
+const LIMITS: Record<LimiterKey, { requests: number; window: "1 h"; prefix: string }> = {
+  roadmap: { requests: 5, window: "1 h", prefix: "rl:roadmap" },
+  analyzer: { requests: 10, window: "1 h", prefix: "rl:analyzer" },
+  parseResume: { requests: 10, window: "1 h", prefix: "rl:parse-resume" },
+  enhanceSummary: { requests: 20, window: "1 h", prefix: "rl:enhance-summary" },
+  suggestSkills: { requests: 20, window: "1 h", prefix: "rl:suggest-skills" },
+};
+
+export type RateLimiterKey = LimiterKey;
+
+const limiterCache = new Map<LimiterKey, Ratelimit>();
+
+function getLimiter(key: LimiterKey): Ratelimit | null {
+  const redis = getRedis();
+  if (!redis) return null;
+
+  let limiter = limiterCache.get(key);
+  if (!limiter) {
+    const cfg = LIMITS[key];
+    limiter = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(cfg.requests, cfg.window),
+      prefix: cfg.prefix,
+      analytics: false,
+    });
+    limiterCache.set(key, limiter);
+  }
+  return limiter;
+}
 
 /**
  * Check rate limit for a given endpoint + userId.
@@ -76,8 +101,14 @@ export async function checkRateLimit(
   key: RateLimiterKey,
   userId: string
 ): Promise<NextResponse | null> {
+  // Redis known-down — fail open without touching the dead host
+  if (Date.now() < redisDownUntil) return null;
+
+  const limiter = getLimiter(key);
+  if (!limiter) return null; // Redis not configured — fail open
+
   try {
-    const { success, limit, remaining, reset } = await rateLimiters[key].limit(userId);
+    const { success, limit, remaining, reset } = await limiter.limit(userId);
 
     if (!success) {
       const retryAfterSeconds = Math.ceil((reset - Date.now()) / 1000);
@@ -102,8 +133,9 @@ export async function checkRateLimit(
     // Allowed — return null so the caller can continue
     return null;
   } catch (err) {
-    // If Redis is down, fail open (don't block the user) but log it
-    logError("[rate-limit] Redis error — failing open", err);
+    // Redis is down — fail open (don't block the user) but back off for a minute
+    redisDownUntil = Date.now() + REDIS_RETRY_AFTER_MS;
+    logError("[rate-limit] Redis error — failing open for 60s", err);
     return null;
   }
 }
