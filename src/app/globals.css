@@ -11,6 +11,13 @@
   --font-serif: var(--font-instrument-serif), "Instrument Serif", ui-serif, Georgia, serif;
   --font-mono: var(--font-geist-mono), "JetBrains Mono", ui-monospace, monospace;
   --font-heading: var(--font-sans);
+
+  /* Font stacks defined locally instead of next/font/google — Google Fonts
+     downloads were stalling every dev render on unstable networks. Uses the
+     real fonts when installed locally; identical fallbacks otherwise. */
+  --font-geist-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-geist-mono: "Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-instrument-serif: "Instrument Serif", ui-serif, Georgia, "Times New Roman", serif;
   
   /* Lovable Landing Colors */
   --color-ink: var(--ink);
