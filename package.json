@@ -67,9 +67,10 @@
     "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "drizzle-kit": "^0.31.10",
+    "drizzle-kit": "^0.31.11",
     "eslint": "^9",
     "eslint-config-next": "^15.5.18",
+    "puppeteer-core": "^25.18.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
