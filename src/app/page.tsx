@@ -5,7 +5,7 @@ import { Trust } from "@/components/landing/sections/Trust";
 import { Bento } from "@/components/landing/sections/Bento";
 import { FeaturesCTA } from "@/components/landing/sections/FeaturesCTA";
 import { Workflow } from "@/components/landing/sections/Workflow";
-import { Templates } from "@/components/landing/sections/Templates";
+import { LazyTemplates } from "@/components/landing/sections/LazyTemplates";
 import { Showcase } from "@/components/landing/sections/Showcase";
 import { Stories } from "@/components/landing/sections/Stories";
 import { CTA } from "@/components/landing/sections/CTA";
@@ -31,7 +31,7 @@ export default function LandingPage() {
       <Bento />
       <FeaturesCTA />
       <Workflow />
-      <Templates />
+      <LazyTemplates />
       <Showcase />
       <Stories />
       <CTA />
